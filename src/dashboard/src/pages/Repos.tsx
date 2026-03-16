@@ -15,9 +15,15 @@ export function Repos() {
   const [selected, setSelected] = useState<Repo | null>(null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => { listRepos().then(setRepos).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    listRepos()
+      .then(setRepos)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function handleSelect(repo: Repo) {
     setSelected(repo);
@@ -41,7 +47,9 @@ export function Repos() {
         </button>
       </div>
 
-      {loading ? <p style={{ color: 'var(--green-dim)' }}>SCANNING REPOSITORIES...</p> : (
+      {loading ? <p style={{ color: 'var(--green-dim)' }}>SCANNING REPOSITORIES...</p> : error ? (
+        <p style={{ color: 'var(--amber)' }}>⚠ {error}</p>
+      ) : (
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {repos.map((r) => (
             <li

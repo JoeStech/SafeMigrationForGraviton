@@ -16,6 +16,10 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     window.location.href = '/login';
     throw new Error('Unauthorized');
   }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Request failed (${res.status})`);
+  }
   return res.json();
 }
 

@@ -37,6 +37,14 @@ class McpSubprocessClient:
         """Spawn the MCP server subprocess."""
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["TOKENIZERS_PARALLELISM"] = "false"
+        env["DISABLE_MLFLOW_INTEGRATION"] = "TRUE"
+        # LD_PRELOAD must be set before the subprocess starts so the shim
+        # is loaded by the dynamic linker before any C library calls happen.
+        shim = "/app/cpu_shim.so"
+        if os.path.exists(shim):
+            existing = env.get("LD_PRELOAD", "")
+            env["LD_PRELOAD"] = f"{shim}:{existing}" if existing else shim
         self._proc = subprocess.Popen(
             [MCP_VENV_PYTHON, "-u", MCP_SERVER_SCRIPT],
             stdin=subprocess.PIPE,
@@ -57,7 +65,7 @@ class McpSubprocessClient:
         line = self._proc.stdout.readline()
         if not line:
             stderr = self._proc.stderr.read().decode("utf-8", errors="replace")
-            raise ConnectionError(f"MCP server closed stdout. stderr: {stderr[:500]}")
+            raise ConnectionError(f"MCP server closed stdout. stderr: {stderr[:3000]}")
         return json.loads(line.decode("utf-8"))
 
     def _request(self, method, params=None):
@@ -113,10 +121,15 @@ def get_mcp_client():
 
 
 def mcp_tools_to_bedrock_tools(mcp_tools):
-    """Convert MCP tool definitions to Bedrock Converse toolSpec format."""
+    """Convert MCP tool definitions to Bedrock Converse toolSpec format.
+
+    Bedrock rejects schemas with 'additionalProperties', so we strip it.
+    """
     bedrock_tools = []
     for tool in mcp_tools:
         schema = tool.get("inputSchema", {"type": "object", "properties": {}})
+        # Bedrock Converse doesn't support additionalProperties in tool schemas
+        schema = {k: v for k, v in schema.items() if k != "additionalProperties"}
         bedrock_tools.append({
             "toolSpec": {
                 "name": tool["name"],

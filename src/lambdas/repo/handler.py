@@ -2,7 +2,7 @@
 
 import fnmatch
 
-from github import Github
+from github import Github, BadCredentialsException
 
 from src.shared import json_response, validate_session, extract_session_token
 
@@ -74,7 +74,10 @@ def handler(event, context):
         return json_response(401, {"error": "Invalid or expired session"})
 
     if method == "GET" and path == "/repos":
-        repos = list_repositories(user_ctx["github_access_token"])
+        try:
+            repos = list_repositories(user_ctx["github_access_token"])
+        except BadCredentialsException:
+            return json_response(401, {"error": "GitHub token expired — please log in again"})
         return json_response(200, repos)
 
     if method == "GET" and "/validate" in path:
@@ -82,7 +85,10 @@ def handler(event, context):
         if len(parts) >= 4:
             owner = parts[1]
             repo_name = parts[2]
-            result = validate_repository(user_ctx["github_access_token"], owner, repo_name)
+            try:
+                result = validate_repository(user_ctx["github_access_token"], owner, repo_name)
+            except BadCredentialsException:
+                return json_response(401, {"error": "GitHub token expired — please log in again"})
             return json_response(200, result)
 
     return json_response(404, {"error": "Not found"})

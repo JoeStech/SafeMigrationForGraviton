@@ -45,60 +45,55 @@ def _verify_token(token, repo_full_name, job_id):
     return resp.status_code == 200
 
 
+def _get_file_sha(fork_full_name, path, branch, headers):
+    """Get the blob SHA of an existing file (needed for updates via Contents API)."""
+    resp = http.get(f"{API}/repos/{fork_full_name}/contents/{path}",
+                    params={"ref": branch}, headers=headers, timeout=10)
+    if resp.status_code == 200:
+        return resp.json().get("sha")
+    return None  # file doesn't exist yet
+
+
 def commit_changes(fork_full_name, branch, modified_files, stub_files, token, job_id):
-    """Commit modified files and stub files to the migration branch via REST API."""
+    """Commit files to the migration branch using the Contents API.
+
+    The Git Data API (git/trees, git/commits) returns 403 for OAuth App tokens
+    on forked repos. The Contents API works correctly with OAuth App tokens.
+    """
+    import base64
     h = _headers(token)
 
-    # Get branch ref
-    ref_resp = http.get(f"{API}/repos/{fork_full_name}/git/ref/heads/{branch}", headers=h, timeout=10)
-    logger.info("GET ref/heads/%s: %s", branch, ref_resp.status_code)
-    ref_resp.raise_for_status()
-    base_sha = ref_resp.json()["object"]["sha"]
-    append_stage_log(job_id, "create_pr", f"Base SHA: {base_sha[:12]}")
-
-    # Build tree elements
-    tree_items = []
+    all_files = []
     for mf in modified_files:
-        tree_items.append({"path": mf["path"], "mode": "100644", "type": "blob", "content": mf["modified_content"]})
+        all_files.append({"path": mf["path"], "content": mf["modified_content"]})
     for sf in stub_files:
-        tree_items.append({"path": sf["path"], "mode": "100644", "type": "blob", "content": sf["content"]})
+        all_files.append({"path": sf["path"], "content": sf["content"]})
 
-    if not tree_items:
+    if not all_files:
         append_stage_log(job_id, "create_pr", "No files to commit — skipping")
-        return base_sha  # nothing to commit
+        return
 
-    append_stage_log(job_id, "create_pr", f"Creating tree with {len(tree_items)} items...")
+    append_stage_log(job_id, "create_pr", f"Committing {len(all_files)} files via Contents API...")
 
-    # Create tree
-    tree_payload = {"base_tree": base_sha, "tree": tree_items}
-    tree_resp = http.post(f"{API}/repos/{fork_full_name}/git/trees", headers=h, timeout=30,
-                          json=tree_payload)
-    logger.info("POST git/trees: %s", tree_resp.status_code)
-    if tree_resp.status_code != 201:
-        error_body = tree_resp.text[:500]
-        logger.error("create_git_tree failed: %s %s", tree_resp.status_code, error_body)
-        append_stage_log(job_id, "create_pr", f"ERROR: create_git_tree {tree_resp.status_code}: {error_body}")
-        tree_resp.raise_for_status()
-    tree_sha = tree_resp.json()["sha"]
-    append_stage_log(job_id, "create_pr", f"Tree created: {tree_sha[:12]}")
+    for f in all_files:
+        path = f["path"]
+        content_b64 = base64.b64encode(f["content"].encode("utf-8")).decode("ascii")
+        existing_sha = _get_file_sha(fork_full_name, path, branch, h)
 
-    # Create commit
-    commit_resp = http.post(f"{API}/repos/{fork_full_name}/git/commits", headers=h, timeout=10,
-                            json={"message": "SafeMigration: arm64 compatibility changes + dependency stubs",
-                                  "tree": tree_sha, "parents": [base_sha]})
-    logger.info("POST git/commits: %s", commit_resp.status_code)
-    if commit_resp.status_code != 201:
-        logger.error("create_git_commit failed: %s %s", commit_resp.status_code, commit_resp.text[:500])
-    commit_resp.raise_for_status()
-    commit_sha = commit_resp.json()["sha"]
-    append_stage_log(job_id, "create_pr", f"Commit created: {commit_sha[:12]}")
+        payload = {
+            "message": "SafeMigration: arm64 compatibility changes",
+            "content": content_b64,
+            "branch": branch,
+        }
+        if existing_sha:
+            payload["sha"] = existing_sha  # required for updates
 
-    # Update branch ref
-    update_resp = http.patch(f"{API}/repos/{fork_full_name}/git/refs/heads/{branch}", headers=h, timeout=10,
-                             json={"sha": commit_sha})
-    logger.info("PATCH git/refs: %s", update_resp.status_code)
-    update_resp.raise_for_status()
-    return commit_sha
+        resp = http.put(f"{API}/repos/{fork_full_name}/contents/{path}",
+                        headers=h, json=payload, timeout=15)
+        if resp.status_code not in (200, 201):
+            append_stage_log(job_id, "create_pr", f"ERROR: failed to write {path}: {resp.status_code} {resp.text[:200]}")
+            resp.raise_for_status()
+        append_stage_log(job_id, "create_pr", f"  wrote {path}")
 
 
 def _build_pr_body(migration_report, generated_changes, generated_stubs):

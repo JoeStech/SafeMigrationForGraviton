@@ -115,21 +115,6 @@ def get_installation_token(owner):
 
 
 def get_effective_token(job_id, repo_full_name):
-    """Get the best available GitHub token for API operations.
-
-    Prefers the GitHub App installation token (full App permissions)
-    over the user-to-server token (which may lack write scopes).
-    """
+    """Get the GitHub token for API operations — uses the user's OAuth token."""
     from src.data.job_store import get_github_token
-
-    owner = repo_full_name.split("/")[0]
-    try:
-        install_token = get_installation_token(owner)
-        if install_token:
-            logger.info("Using installation token for %s", repo_full_name)
-            return install_token
-        logger.warning("Installation token unavailable for %s, falling back to user token", owner)
-    except Exception as e:
-        logger.error("Failed to get installation token for %s: %s", owner, e)
-
     return get_github_token(job_id)

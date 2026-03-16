@@ -10,7 +10,7 @@ LAMBDA_ROLE_ARN="${LAMBDA_ROLE_ARN:?Set LAMBDA_ROLE_ARN env var}"
 GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:?Set GITHUB_CLIENT_ID env var}"
 GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:?Set GITHUB_CLIENT_SECRET env var}"
 GITHUB_REDIRECT_URI="${GITHUB_REDIRECT_URI:-http://localhost:3000/callback}"
-BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-6-20250514-v1:0}"
+BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-global.anthropic.claude-sonnet-4-6}"
 STATE_MACHINE_ARN="${STATE_MACHINE_ARN:-}"
 GITHUB_APP_ID="${GITHUB_APP_ID:-}"
 GITHUB_APP_PRIVATE_KEY_FILE="${GITHUB_APP_PRIVATE_KEY_FILE:-safemigration.2026-03-12.private-key.pem}"
@@ -36,8 +36,16 @@ echo "Building analyze Lambda image..."
 aws ecr get-login-password | docker login --username AWS --password-stdin \
   "${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
 
+BUILD_ARGS=""
+if [ -f "$PROJECT_ROOT/$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
+  BUILD_ARGS="--build-arg PEM_FILE=$GITHUB_APP_PRIVATE_KEY_FILE"
+fi
+
 docker build \
+  --platform linux/arm64 \
+  --provenance=false \
   -f "$SCRIPT_DIR/analyze-lambda/Dockerfile" \
+  $BUILD_ARGS \
   -t "$ECR_REPO_NAME:latest" \
   "$PROJECT_ROOT"
 
@@ -51,8 +59,9 @@ echo "Image pushed: $IMAGE_URI"
 ENV_VARS="Variables={SESSIONS_TABLE=SafeMigration-Sessions,JOBS_TABLE=SafeMigration-Jobs"
 ENV_VARS+=",GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET"
 ENV_VARS+=",GITHUB_REDIRECT_URI=$GITHUB_REDIRECT_URI,BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID"
-ENV_VARS+=",MCP_SERVER_DIR=/opt/arm-mcp,MCP_VENV_PYTHON=/opt/arm-mcp/.venv/bin/python"
-ENV_VARS+=",MCP_SERVER_SCRIPT=/opt/arm-mcp/server.py"
+ENV_VARS+=",MCP_SERVER_DIR=/app,MCP_VENV_PYTHON=/app/.venv/bin/python"
+ENV_VARS+=",MCP_SERVER_SCRIPT=/app/mcp_server_wrapper.py"
+ENV_VARS+=",TOKENIZERS_PARALLELISM=false,DISABLE_MLFLOW_INTEGRATION=TRUE"
 if [ -n "$STATE_MACHINE_ARN" ]; then
   ENV_VARS+=",STATE_MACHINE_ARN=$STATE_MACHINE_ARN"
 fi
@@ -89,7 +98,6 @@ else
     --role "$LAMBDA_ROLE_ARN" \
     --timeout $TIMEOUT \
     --memory-size $MEMORY \
-    --architectures arm64 \
     --environment "$ENV_VARS" \
     --no-cli-pager
 fi
