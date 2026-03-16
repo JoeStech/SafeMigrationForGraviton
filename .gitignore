@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Private keys / certs
+*.pem
+*.key
+*.p12
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.zip
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Kiro tool config
+.kiro/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# AWS CDK / SAM
+cdk.out/
+.aws-sam/
+samconfig.toml

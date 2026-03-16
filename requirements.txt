@@ -1,0 +1,7 @@
+boto3>=1.35.0
+requests>=2.32.0
+PyGithub>=2.5.0
+PyJWT[crypto]>=2.8.0
+hypothesis>=6.115.0
+pytest>=8.3.0
+moto[dynamodb]>=5.0.0

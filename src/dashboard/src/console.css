@@ -1,0 +1,51 @@
+/* ── Retro Console Theme ── */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --bg: #0a0a0a;
+  --bg-panel: #0d1a0d;
+  --bg-hover: #112211;
+  --bg-selected: #1a331a;
+  --green: #00ff41;
+  --green-dim: #00cc33;
+  --green-muted: #338833;
+  --green-glow: 0 0 8px rgba(0, 255, 65, 0.4);
+  --red: #ff3333;
+  --amber: #ffaa00;
+  --cyan: #00cccc;
+  --border: #1a3a1a;
+  --text-dim: #669966;
+  --font: 'Fira Mono', 'Courier New', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  z-index: 9999;
+}
+
+#root { min-height: 100vh; }
+
+a { color: var(--green); text-decoration: none; }
+a:hover { text-shadow: var(--green-glow); }
