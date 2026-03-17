@@ -83,7 +83,7 @@ for fn in "${LAMBDAS[@]}"; do
   # Timeout varies by Lambda
   if [ "$fn" = "check_pipeline" ]; then
     TIMEOUT=360
-  elif [ "$fn" = "generate" ] || [ "$fn" = "feedback" ]; then
+  elif [ "$fn" = "generate" ] || [ "$fn" = "feedback" ] || [ "$fn" = "stub" ]; then
     TIMEOUT=120
   else
     TIMEOUT=30

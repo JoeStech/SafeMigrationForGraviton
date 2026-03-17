@@ -136,9 +136,13 @@ not the Redis server version.
 - If unsure about Arm equivalents, use knowledge_base_search to find documentation.
 
 AFTER completing all tool calls, return your final answer as a JSON object with:
-- "dependencies": array of objects, each with: file_path, line_number, current_value, \
+- "dependencies": array of objects for items that REQUIRE an actual change, each with: \
+file_path, line_number, current_value, \
 dependency_type (runner|base-image|package|action|instruction), arm64_alternative, \
-confidence (high|medium|low), rationale
+confidence (high|medium|low), rationale. \
+IMPORTANT: Only include entries where current_value != arm64_alternative and a real \
+file change is needed. Do NOT include entries for things that are already compatible \
+or require no change.
 - "summary": brief summary of all findings and recommended changes
 
 You MUST call tools before producing the final JSON. Do not skip tool calls."""

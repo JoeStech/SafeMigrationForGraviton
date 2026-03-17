@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getJob } from '../api';
 
-const STAGES = ['fork', 'analyze', 'generate', 'stub', 'create_pr', 'wait_pipeline', 'feedback'];
+const STAGES = ['fork', 'analyze', 'generate', 'stub', 'create_pr'];
 
 interface LogEntry { ts: number; msg: string; }
 interface StageInfo { status: string; startedAt?: number; completedAt?: number; error?: string; }
@@ -26,6 +26,7 @@ export function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   const [job, setJob] = useState<JobData | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const [userSelected, setUserSelected] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
@@ -34,13 +35,14 @@ export function JobDetail() {
     return () => clearInterval(interval);
   }, [jobId]);
 
-  // Auto-select the current/latest active stage
+  // Auto-follow the active stage unless the user has manually clicked one
   useEffect(() => {
-    if (!job) return;
-    if (selectedStage && job.stages?.[selectedStage]) return; // keep user selection
-    const active = job.currentStage || STAGES.find(s => job.stages?.[s]);
+    if (!job || userSelected) return;
+    // Prefer in_progress stage, then fall back to last stage with any data
+    const inProgress = STAGES.find(s => job.stages?.[s]?.status === 'in_progress');
+    const active = inProgress || job.currentStage || STAGES.slice().reverse().find(s => job.stages?.[s]);
     if (active) setSelectedStage(active);
-  }, [job?.currentStage]);
+  }, [job]);
 
   if (!job) return <p style={{ textAlign: 'center', marginTop: '20vh', color: 'var(--green-dim)' }}>LOADING...</p>;
 
@@ -64,13 +66,13 @@ export function JobDetail() {
         {STAGES.map((stage, i) => (
           <div key={stage} style={{ display: 'flex', alignItems: 'center' }}>
             <div
-              onClick={() => setSelectedStage(stage)}
+              onClick={() => { setUserSelected(true); setSelectedStage(stage); }}
               style={{
                 padding: '6px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font)',
                 letterSpacing: 1, ...stageStyle(job.stages?.[stage], selectedStage === stage),
               }}
               role="button" tabIndex={0}
-              onKeyDown={e => e.key === 'Enter' && setSelectedStage(stage)}
+              onKeyDown={e => e.key === 'Enter' && (setUserSelected(true), setSelectedStage(stage))}
               aria-label={`View logs for ${stage}`}
             >
               {stage.replace('_', ' ').toUpperCase()}
@@ -129,10 +131,10 @@ export function JobDetail() {
       </div>
 
       {/* Error details */}
-      {(job.status === 'failed' || job.status === 'manual_review') && (
+      {(job.status === 'failed') && (
         <div style={{ marginTop: 16, padding: 16, border: '1px solid var(--red)', background: 'rgba(255,51,51,0.05)' }}>
           <p style={{ color: 'var(--red)', fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>
-            {job.status === 'failed' ? '✗ PIPELINE FAILED' : '⚠ MANUAL REVIEW REQUIRED'}
+            ✗ PIPELINE FAILED
           </p>
           {job.currentStage && (
             <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 8 }}>

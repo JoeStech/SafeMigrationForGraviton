@@ -1,5 +1,5 @@
 {
-  "Comment": "SafeMigration orchestrator \u2014 fork, analyze, generate, stub, PR, check pipeline, feedback loop",
+  "Comment": "SafeMigration orchestrator \u2014 fork, analyze, generate, stub, PR",
   "StartAt": "ForkRepository",
   "States": {
     "ForkRepository": {
@@ -112,90 +112,7 @@
           "ResultPath": "$.error"
         }
       ],
-      "Next": "WaitForPipelineRun"
-    },
-    "WaitForPipelineRun": {
-      "Type": "Wait",
-      "Seconds": 60,
-      "Next": "CheckPipelineStatus"
-    },
-    "CheckPipelineStatus": {
-      "Type": "Task",
-      "Resource": "${CheckPipelineLambdaArn}",
-      "Parameters": {
-        "job_id.$": "$.job_id",
-        "fork_full_name.$": "$.fork_result.fork_full_name",
-        "pr_number.$": "$.pr_result.pr_number"
-      },
-      "ResultPath": "$.pipeline_check",
-      "Catch": [
-        {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
-          "Next": "MarkJobFailed",
-          "ResultPath": "$.error"
-        }
-      ],
-      "Next": "CheckPipelineResult"
-    },
-    "CheckPipelineResult": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.pipeline_check.pipeline_status",
-          "StringEquals": "success",
-          "Next": "MarkJobCompleted"
-        },
-        {
-          "Variable": "$.pipeline_check.pipeline_status",
-          "StringEquals": "no_runs",
-          "Next": "MarkJobCompleted"
-        }
-      ],
-      "Default": "FeedbackLoop"
-    },
-    "FeedbackLoop": {
-      "Type": "Task",
-      "Resource": "${FeedbackLambdaArn}",
-      "Parameters": {
-        "job_id.$": "$.job_id",
-        "fork_full_name.$": "$.fork_result.fork_full_name",
-        "migration_branch.$": "$.fork_result.migration_branch",
-        "pr_number.$": "$.pr_result.pr_number",
-        "generated_changes.$": "$.generate_result",
-        "feedback_attempts.$": "$.feedback_attempts"
-      },
-      "ResultPath": "$.feedback_result",
-      "Catch": [
-        {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
-          "Next": "MarkManualReview",
-          "ResultPath": "$.error"
-        }
-      ],
-      "Next": "IncrementFeedbackAttempts"
-    },
-    "IncrementFeedbackAttempts": {
-      "Type": "Pass",
-      "Parameters": {
-        "feedback_attempts.$": "$.feedback_result.attempt_number"
-      },
-      "ResultPath": "$.feedback_tracking",
-      "Next": "CheckFeedbackAttempts"
-    },
-    "CheckFeedbackAttempts": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.feedback_result.status",
-          "StringEquals": "max_attempts_reached",
-          "Next": "MarkManualReview"
-        }
-      ],
-      "Default": "WaitForPipelineRun"
+      "Next": "MarkJobCompleted"
     },
     "MarkJobCompleted": {
       "Type": "Task",
@@ -219,16 +136,6 @@
       },
       "Next": "JobFailed"
     },
-    "MarkManualReview": {
-      "Type": "Task",
-      "Resource": "${CompleteLambdaArn}",
-      "Parameters": {
-        "job_id.$": "$.job_id",
-        "terminal_status": "manual_review",
-        "pr_result.$": "$.pr_result"
-      },
-      "Next": "ManualReview"
-    },
     "JobCompleted": {
       "Type": "Succeed"
     },
@@ -236,10 +143,6 @@
       "Type": "Fail",
       "Error": "MigrationFailed",
       "Cause": "A stage in the migration pipeline failed"
-    },
-    "ManualReview": {
-      "Type": "Succeed",
-      "Comment": "Max feedback attempts reached \u2014 requires manual review"
     }
   }
 }

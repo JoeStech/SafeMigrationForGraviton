@@ -22,7 +22,7 @@ def get_login_url():
         f"https://github.com/login/oauth/authorize"
         f"?client_id={GITHUB_CLIENT_ID}"
         f"&redirect_uri={GITHUB_REDIRECT_URI}"
-        f"&scope=repo,read:user"
+        f"&scope=repo,workflow,read:user"
     )
     return json_response(200, {"url": url})
 
