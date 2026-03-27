@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { listRepos, validateRepo, createJob, logout } from '../api';
 
 interface Repo { owner: string; name: string; full_name: string; default_branch: string; is_private: boolean; }
-interface Validation { is_valid: boolean; workflow_files: string[]; dockerfiles: string[]; message?: string; }
+interface Validation { is_valid: boolean; workflow_files: string[]; dockerfiles: string[]; package_manifests: string[]; build_files: string[]; source_files: string[]; message?: string; }
 
 const btn: React.CSSProperties = {
   padding: '8px 20px', background: 'transparent', color: 'var(--green)',
@@ -78,10 +78,15 @@ export function Repos() {
         <div style={{ marginTop: 16, padding: 16, border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
           {validation.is_valid ? (
             <>
-              <p style={{ color: 'var(--green)', marginBottom: 8 }}>✓ MIGRATABLE ARTIFACTS DETECTED:</p>
+              <p style={{ color: 'var(--green)', marginBottom: 8 }}>✓ MIGRATABLE FILES DETECTED:</p>
               <ul style={{ paddingLeft: 20, color: 'var(--green-dim)', marginBottom: 12 }}>
-                {validation.workflow_files.map((f) => <li key={f}>workflow: {f}</li>)}
-                {validation.dockerfiles.map((f) => <li key={f}>dockerfile: {f}</li>)}
+                {(validation.workflow_files ?? []).map((f) => <li key={f}>workflow: {f}</li>)}
+                {(validation.dockerfiles ?? []).map((f) => <li key={f}>dockerfile: {f}</li>)}
+                {(validation.package_manifests ?? []).map((f) => <li key={f}>manifest: {f}</li>)}
+                {(validation.build_files ?? []).map((f) => <li key={f}>build: {f}</li>)}
+                {(validation.source_files ?? []).length > 0 && (
+                  <li>{validation.source_files.length} source file{validation.source_files.length !== 1 ? 's' : ''} (C/C++/asm/Rust/Go/Java)</li>
+                )}
               </ul>
               <button
                 onClick={handleMigrate}

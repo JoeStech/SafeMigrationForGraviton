@@ -23,39 +23,73 @@ def list_repositories(github_access_token):
 
 
 def validate_repository(github_access_token, owner, repo_name):
-    """Check repo for workflow files, Dockerfiles, and package manifests."""
+    """Check repo for all migratable artifacts — CI, Docker, manifests, build files, source."""
     g = Github(github_access_token)
     repo = g.get_repo(f"{owner}/{repo_name}")
     workflow_files = []
     dockerfiles = []
     package_manifests = []
+    build_files = []
+    source_files = []
 
-    manifest_names = [
+    manifest_names = {
         "requirements.txt", "package.json", "go.mod", "Cargo.toml",
         "pom.xml", "build.gradle", "Gemfile", "composer.json",
-    ]
+    }
+    build_file_names = {
+        "Makefile", "makefile", "GNUmakefile",
+        "CMakeLists.txt", "meson.build", "configure.ac", "configure.in",
+        "BUILD", "BUILD.bazel", "WORKSPACE",
+        "SConstruct", "SConscript",
+        "vcpkg.json", "conanfile.txt", "conanfile.py",
+        "setup.py", "setup.cfg", "pyproject.toml",
+        "binding.gyp", "build.rs",
+    }
+    source_extensions = {
+        ".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".hxx",
+        ".s", ".S", ".asm", ".rs", ".go", ".java",
+    }
+    skip_dirs = {
+        "node_modules", ".git", "vendor", "third_party", "dist", "build",
+        "__pycache__", ".tox",
+    }
 
     tree = repo.get_git_tree(repo.default_branch, recursive=True)
     for item in tree.tree:
         if item.type != "blob":
             continue
         path = item.path
-        basename = path.split("/")[-1]
+        parts = path.split("/")
+        basename = parts[-1]
+
+        if any(p in skip_dirs for p in parts):
+            continue
+
         if fnmatch.fnmatch(path, ".github/workflows/*.yml") or fnmatch.fnmatch(path, ".github/workflows/*.yaml"):
             workflow_files.append(path)
-        if "Dockerfile" in basename:
+        elif "Dockerfile" in basename:
             dockerfiles.append(path)
-        if basename in manifest_names:
+        elif basename in manifest_names:
             package_manifests.append(path)
+        elif basename in build_file_names:
+            build_files.append(path)
+        else:
+            import os as _os
+            ext = _os.path.splitext(basename)[1].lower()
+            if ext in source_extensions:
+                source_files.append(path)
 
-    is_valid = len(workflow_files) > 0 or len(dockerfiles) > 0
-    message = None if is_valid else "No workflow files or Dockerfiles found in this repository."
+    total = len(workflow_files) + len(dockerfiles) + len(package_manifests) + len(build_files) + len(source_files)
+    is_valid = total > 0
+    message = None if is_valid else "No migratable files found in this repository."
 
     return {
         "is_valid": is_valid,
         "workflow_files": workflow_files,
         "dockerfiles": dockerfiles,
         "package_manifests": package_manifests,
+        "build_files": build_files,
+        "source_files": source_files,
         "message": message,
     }
 

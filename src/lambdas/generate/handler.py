@@ -1,4 +1,8 @@
-"""Generate Lambda — use Bedrock to rewrite files for arm64 compatibility."""
+"""Generate Lambda — use Bedrock to rewrite ALL files for arm64 compatibility.
+
+Handles CI configs, Dockerfiles, manifests, build files, AND source code
+(C/C++ intrinsics, inline asm, arch guards, compiler flags, etc.).
+"""
 
 import difflib
 import json
@@ -11,15 +15,51 @@ from src.data.job_store import update_job_stage, append_stage_log
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 
 
-def _rewrite_file(path, original_content, dependencies, bedrock):
-    """Ask Claude to rewrite a single file applying all arm64 changes."""
+# ── Per-file rewrite prompts ────────────────────────────────────────
+
+_SOURCE_CODE_TYPES = {"intrinsic", "asm", "arch-guard"}
+_BUILD_TYPES = {"compiler-flag", "build-config"}
+
+
+def _rewrite_prompt_for(path, original_content, dependencies):
+    """Build a rewrite prompt tailored to the file type."""
     dep_descriptions = "\n".join(
-        f"- Line {d['line_number']}: replace `{d['current_value']}` with `{d['arm64_alternative']}` "
-        f"({d['dependency_type']}, confidence={d['confidence']}): {d['rationale']}"
+        f"- Line {d['line_number']}: replace `{d['current_value']}` with "
+        f"`{d['arm64_alternative']}` ({d['dependency_type']}, "
+        f"confidence={d['confidence']}): {d['rationale']}"
         for d in dependencies
     )
 
-    prompt = f"""You are an expert at migrating CI/CD pipeline files and Dockerfiles to arm64/Graviton compatibility.
+    dep_types = {d["dependency_type"] for d in dependencies}
+    has_source = bool(dep_types & _SOURCE_CODE_TYPES)
+    has_build = bool(dep_types & _BUILD_TYPES)
+
+    extra_rules = ""
+    if has_source:
+        extra_rules += """
+SOURCE CODE RULES:
+- When replacing x86 intrinsics (SSE/AVX) with Arm NEON equivalents, include the \
+correct header (#include <arm_neon.h>).
+- NEON lane indices MUST be compile-time constants.
+- If an x86 intrinsic has no single NEON equivalent, implement a multi-instruction \
+sequence that produces identical results.
+- Preserve existing #ifdef __x86_64__ blocks but add a corresponding \
+#elif defined(__aarch64__) block with the Arm implementation.
+- For inline asm, rewrite to aarch64 assembly or replace with NEON intrinsics.
+- Do NOT remove x86 code paths — keep them under their existing arch guards so the \
+file remains cross-platform.
+"""
+    if has_build:
+        extra_rules += """
+BUILD FILE RULES:
+- Replace -march=x86-64 / -mavx* / -msse* flags with appropriate Arm equivalents \
+(-march=armv8-a+simd, -march=armv8.2-a+sve, etc.) under an aarch64 conditional.
+- Keep the x86 flags under an x86_64 conditional so the build stays cross-platform.
+- For CMake, use CMAKE_SYSTEM_PROCESSOR checks; for Makefiles, use $(uname -m) or \
+similar.
+"""
+
+    return f"""You are an expert at migrating code from x86 to arm64/aarch64 (AWS Graviton).
 
 Here is the file `{path}`:
 
@@ -30,25 +70,41 @@ Here is the file `{path}`:
 Apply ALL of the following arm64 migration changes to this file:
 
 {dep_descriptions}
-
-Rules:
+{extra_rules}
+General rules:
 - Apply every change listed above
-- Preserve all formatting, comments, indentation, and structure that is not being changed
-- Do not add or remove any lines except as required by the changes above
-- Return ONLY the complete rewritten file content, no explanation, no markdown code fences"""
+- Preserve all formatting, comments, indentation, and structure not being changed
+- Keep the file cross-platform where possible (dual arch guards)
+- Return ONLY the complete rewritten file content, no explanation, no markdown fences"""
+
+
+def _rewrite_file(path, original_content, dependencies, bedrock):
+    """Ask Claude to rewrite a single file applying all arm64 changes."""
+    prompt = _rewrite_prompt_for(path, original_content, dependencies)
 
     response = bedrock.invoke_model(
         modelId=BEDROCK_MODEL_ID,
         body=json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "messages": [{"role": "user", "content": prompt}],
         }),
         contentType="application/json",
         accept="application/json",
     )
     body = json.loads(response["body"].read())
-    return body["content"][0]["text"].strip()
+    text = body["content"][0]["text"].strip()
+
+    # Strip markdown fences if Claude wrapped the output
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove first line (```lang) and last line (```)
+        if lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
+        else:
+            text = "\n".join(lines[1:])
+
+    return text
 
 
 def generate_changes(migration_report, scanned_files, job_id):
@@ -66,9 +122,10 @@ def generate_changes(migration_report, scanned_files, job_id):
             continue
         deps_by_file.setdefault(dep["file_path"], []).append(dep)
 
-    # Build file content lookup
+    # Build file content lookup from ALL scanned categories
     all_files = {}
-    for category in ("workflow_files", "dockerfiles", "package_manifests"):
+    for category in ("workflow_files", "dockerfiles", "package_manifests",
+                      "build_files", "source_files"):
         for f in scanned_files.get(category, []):
             all_files[f["path"]] = f["content"]
 
@@ -81,7 +138,8 @@ def generate_changes(migration_report, scanned_files, job_id):
             unchanged_files.append(path)
             continue
 
-        append_stage_log(job_id, "generate", f"Rewriting {path} ({len(file_deps)} changes)...")
+        append_stage_log(job_id, "generate",
+                         f"Rewriting {path} ({len(file_deps)} changes)...")
         modified_content = _rewrite_file(path, content, file_deps, bedrock)
 
         diff = "".join(difflib.unified_diff(
@@ -94,7 +152,8 @@ def generate_changes(migration_report, scanned_files, job_id):
         changes = [
             {
                 "line_range": (d.get("line_number", 0), d.get("line_number", 0)),
-                "description": f"Replace `{d['current_value']}` with `{d['arm64_alternative']}`",
+                "description": (f"Replace `{d['current_value']}` with "
+                                f"`{d['arm64_alternative']}`"),
                 "rationale": d.get("rationale", ""),
             }
             for d in file_deps
@@ -121,11 +180,13 @@ def handler(event, context):
 
     update_job_stage(job_id, "generate", "in_progress")
     try:
-        append_stage_log(job_id, "generate", "Generating ARM64-compatible file modifications...")
+        append_stage_log(job_id, "generate",
+                         "Generating ARM64-compatible file modifications...")
         result = generate_changes(report, scanned, job_id)
         mod_count = len(result.get("modified_files", []))
         unch_count = len(result.get("unchanged_files", []))
-        append_stage_log(job_id, "generate", f"Done: {mod_count} files modified, {unch_count} unchanged")
+        append_stage_log(job_id, "generate",
+                         f"Done: {mod_count} files modified, {unch_count} unchanged")
         for mf in result.get("modified_files", []):
             append_stage_log(job_id, "generate", f"  Modified: {mf['path']}")
         update_job_stage(job_id, "generate", "completed")

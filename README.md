@@ -1,3 +1,5 @@
+> ⚠️ **This project is actively under development and is not stable.** APIs, data formats, and infrastructure may change without notice. Use at your own risk.
+
 # SafeMigration
 
 Automates Graviton (ARM/arm64) migration for GitHub-hosted CI/CD pipelines. Users authenticate via GitHub, select a repository, and the system forks it into a sandbox, analyzes pipeline files using Amazon Bedrock, generates arm64-compatible changes with automatic secrets/database stubbing, and opens a reviewable pull request.

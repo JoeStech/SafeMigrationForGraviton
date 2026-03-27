@@ -112,6 +112,8 @@ class ScannedFiles:
     workflow_files: list[FileContent]
     dockerfiles: list[FileContent]
     package_manifests: list[FileContent]
+    build_files: list[FileContent]
+    source_files: list[FileContent]
     parse_errors: list[ParseError]
 
 
@@ -120,7 +122,8 @@ class IdentifiedDependency:
     file_path: str
     line_number: int
     current_value: str
-    dependency_type: str  # "runner" | "base-image" | "package" | "action" | "instruction"
+    dependency_type: str  # "runner" | "base-image" | "package" | "action" | "instruction" |
+                          # "intrinsic" | "asm" | "compiler-flag" | "build-config" | "arch-guard"
     arm64_alternative: str
     confidence: str  # "high" | "medium" | "low"
     rationale: str
@@ -198,19 +201,24 @@ class StubFile:
     content: str
     annotation: str
     replaced_dependency: str
+    integration_instructions: Optional[str] = None
 
 
 @dataclass
 class FlaggedDependency:
-    reference: object  # SecretReference | DatabaseReference | ServiceReference
+    file_path: str
+    dependency: str
     reason: str
-    placeholder_stub: str
+    suggested_approach: str
 
 
 @dataclass
 class GeneratedStubs:
     stub_files: list[StubFile]
-    flagged_for_review: list[FlaggedDependency]
+    env_file: Optional[StubFile] = None
+    docker_compose_override: Optional[StubFile] = None
+    setup_script: Optional[StubFile] = None
+    flagged_for_review: list[FlaggedDependency] = None
 
 
 # ── Pull Request ──
